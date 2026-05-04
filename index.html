@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Netbooks</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+  * { font-family: 'Inter', sans-serif; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+  option { background: #1e293b; color: white; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+  ::-webkit-scrollbar-thumb { background: rgba(99,179,237,0.4); border-radius: 3px; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#0f172a;">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── íconos SVG inline (sin dependencia de lucide) ──────────────────────────
+const Icon = ({ d, size=20, color="currentColor", className="" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    className={className}>
+    {Array.isArray(d) ? d.map((p,i)=><path key={i} d={p}/>) : <path d={d}/>}
+  </svg>
+);
+
+const ICONS = {
+  plus:    "M12 5v14M5 12h14",
+  check:   "M20 6L9 17l-5-5",
+  eye:     ["M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12","M12 15a3 3 0 100-6 3 3 0 000 6"],
+  rotate:  "M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 005.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 013.51 15",
+  trash:   ["M3 6h18","M19 6l-1 14H6L5 6","M8 6V4h8v2"],
+  laptop:  ["M2 3h20v13H2z","M1 20h22"],
+  mapPin:  ["M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z","M12 13a3 3 0 100-6 3 3 0 000 6"],
+  download:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
+  table:   ["M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18",""],
+  filter:  "M22 3H2l8 9.46V19l4 2v-8.54L22 3",
+  calendar:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18",
+  excel:   ["M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z","M14 2v6h6","M8 13h2m4 0h2M8 17h2m4 0h2"],
+};
+
+function App() {
+  const [registros, setRegistros]     = useState([]);
+  const [activeTab, setActiveTab]     = useState('new');
+  const [devolucionId, setDevolucionId] = useState('');
+  const [busqueda, setBusqueda]       = useState('');
+  const [filtroTurno, setFiltroTurno] = useState('todos');
+  const [filtroFecha, setFiltroFecha] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [formData, setFormData]       = useState({
+    estudiante:'', docente:'', materia:'', turno:'Mañana',
+    numeroComputadora:'', numeroSerie:'', sector:'',
+    fecha: new Date().toISOString().split('T')[0],
+  });
+
+  useEffect(() => {
+    try {
+      const d = localStorage.getItem('netbookControl');
+      if (d) setRegistros(JSON.parse(d));
+    } catch(e) {}
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('netbookControl', JSON.stringify(registros));
+  }, [registros]);
+
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const agregarRegistro = (e) => {
+    e.preventDefault();
+    if (!formData.estudiante || !formData.docente || !formData.materia) return;
+    setRegistros([{ id: Date.now(), ...formData, estado:'asignada', fechaDevolucion:null }, ...registros]);
+    setFormData({ estudiante:'',docente:'',materia:'',turno:'Mañana',
+      numeroComputadora:'',numeroSerie:'',sector:'',
+      fecha: new Date().toISOString().split('T')[0] });
+    setActiveTab('historial');
+  };
+
+  const registrarDevolucion = () => {
+    const id = parseInt(devolucionId);
+    const reg = registros.find(r => r.id === id);
+    if (reg && reg.estado === 'asignada') {
+      setRegistros(registros.map(r => r.id === id
+        ? { ...r, estado:'devuelto', fechaDevolucion: hoy } : r));
+      setDevolucionId('');
+      alert('✓ Devolución registrada correctamente');
+    } else alert('⚠ Registro no encontrado o ya devuelto');
+  };
+
+  const eliminarRegistro = (id) => {
+    if (window.confirm('¿Está seguro de que desea eliminar este registro?'))
+      setRegistros(registros.filter(r => r.id !== id));
+  };
+
+  // ── Filtros ────────────────────────────────────────────────────────────────
+  const registrosFiltrados = registros.filter(r => {
+    const txt = busqueda.toLowerCase();
+    const ok1 = !txt || [r.estudiante,r.docente,r.materia,r.numeroSerie,r.numeroComputadora]
+      .some(v => v.toLowerCase().includes(txt));
+    const ok2 = filtroTurno === 'todos' || r.turno === filtroTurno;
+    const ok3 = !filtroFecha || r.fecha === filtroFecha || r.fechaDevolucion === filtroFecha;
+    const ok4 = filtroEstado === 'todos' || r.estado === filtroEstado;
+    return ok1 && ok2 && ok3 && ok4;
+  });
+
+  const activas   = registros.filter(r => r.estado === 'asignada');
+  const devueltas = registros.filter(r => r.estado === 'devuelto');
+  const hoyRegistros = registros.filter(r => r.fecha === hoy || r.fechaDevolucion === hoy);
+
+  // ── Exportar Excel ─────────────────────────────────────────────────────────
+  const exportarExcel = (datos, nombreArchivo) => {
+    if (!datos.length) { alert('No hay registros para exportar.'); return; }
+
+    const filas = datos.map(r => ({
+      'N° Computadora':  r.numeroComputadora || '',
+      'N° Serie':        r.numeroSerie || '',
+      'Estudiante':      r.estudiante,
+      'Docente':         r.docente,
+      'Materia':         r.materia,
+      'Turno':           r.turno,
+      'Sector':          r.sector || '',
+      'Fecha Asignación': r.fecha,
+      'Estado':          r.estado === 'asignada' ? 'Asignada' : 'Devuelta',
+      'Fecha Devolución': r.fechaDevolucion || '—',
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(filas);
+
+    // Ancho de columnas
+    ws['!cols'] = [
+      {wch:15},{wch:18},{wch:22},{wch:22},{wch:18},
+      {wch:10},{wch:16},{wch:16},{wch:12},{wch:16}
+    ];
+
+    // Estilo encabezado (color de fondo azul en celdas A1:J1)
+    const headerRange = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = headerRange.s.c; C <= headerRange.e.c; ++C) {
+      const cell = ws[XLSX.utils.encode_cell({r:0, c:C})];
+      if (cell) {
+        cell.s = {
+          fill: { fgColor: { rgb: "1E40AF" } },
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          alignment: { horizontal: "center" }
+        };
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Registros');
+
+    // Hoja resumen
+    const resumen = [
+      ['RESUMEN DEL REPORTE'],
+      ['Generado el:', new Date().toLocaleString('es-AR')],
+      ['Total registros:', datos.length],
+      ['Asignadas:', datos.filter(r=>r.estado==='asignada').length],
+      ['Devueltas:', datos.filter(r=>r.estado==='devuelto').length],
+    ];
+    const wsRes = XLSX.utils.aoa_to_sheet(resumen);
+    wsRes['!cols'] = [{wch:20},{wch:25}];
+    XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen');
+
+    XLSX.writeFile(wb, `${nombreArchivo}.xlsx`);
+  };
+
+  // ── Input helper ───────────────────────────────────────────────────────────
+  const inputCls = "w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all backdrop-blur-sm";
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 25%,#0d1b3f 75%,#1a2a4a 100%)'}}>
+
+      {/* Header */}
+      <div className="relative bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-700 text-white shadow-2xl border-b border-blue-400/30">
+        <div className="max-w-7xl mx-auto px-4 py-8 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center text-2xl border border-white/30 shadow-lg">💻</div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight">Control de Netbooks</h1>
+              <p className="text-blue-100 text-sm mt-1">Gestión de asignación y devolución</p>
+            </div>
+          </div>
+          {/* Botones exportar del header */}
+          <div className="flex gap-3 flex-wrap">
+            <button onClick={() => exportarExcel(hoyRegistros, `netbooks_${hoy}`)}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-400/40 rounded-xl text-emerald-300 font-semibold text-sm transition-all">
+              <Icon d={ICONS.download} size={16}/> Excel Hoy ({hoyRegistros.length})
+            </button>
+            <button onClick={() => exportarExcel(registros, `netbooks_completo_${hoy}`)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-400/40 rounded-xl text-blue-300 font-semibold text-sm transition-all">
+              <Icon d={ICONS.download} size={16}/> Excel Completo ({registros.length})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
+
+        {/* Estadísticas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {[
+            { label:'Asignadas', value:activas.length,   color:'cyan',   emoji:'📤' },
+            { label:'Devueltas', value:devueltas.length, color:'emerald', emoji:'✅' },
+            { label:'Total',     value:registros.length, color:'purple',  emoji:'📊' },
+            { label:'Hoy',       value:hoyRegistros.length, color:'orange','emoji':'📅' },
+          ].map(s => (
+            <div key={s.label}
+              className={`bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/20 hover:border-${s.color}-400/50 shadow-xl transition-all duration-300 hover:scale-105`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-2xl">{s.emoji}</span>
+              </div>
+              <div className={`text-4xl font-black text-${s.color}-400 mb-1`}>{s.value}</div>
+              <p className="text-gray-400 text-xs font-medium">{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 bg-white/5 backdrop-blur-md rounded-2xl p-2 border border-white/10 flex-wrap">
+          {[
+            { id:'new',       label:'Nueva Asignación', icon:ICONS.plus,    grad:'from-cyan-500 to-blue-600',     shadow:'cyan' },
+            { id:'devolucion',label:'Devolución',        icon:ICONS.rotate,  grad:'from-emerald-500 to-teal-600',  shadow:'emerald' },
+            { id:'historial', label:`Historial (${registros.length})`, icon:ICONS.eye, grad:'from-purple-500 to-pink-600', shadow:'purple' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 flex items-center gap-2 ${
+                activeTab === t.id
+                  ? `bg-gradient-to-r ${t.grad} text-white shadow-lg`
+                  : 'text-gray-300 hover:text-white'
+              }`}>
+              <Icon d={t.icon} size={16}/>{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── TAB: Nueva Asignación ─────────────────────────────────────────── */}
+        {activeTab === 'new' && (
+          <div className="bg-white/10 backdrop-blur-md rounded-3xl shadow-2xl p-8 border border-white/20 animate-fadeIn">
+            <h2 className="text-2xl font-black text-white mb-1">Nueva Asignación de Netbook</h2>
+            <p className="text-gray-400 text-sm mb-6">Completá todos los campos para registrar una nueva asignación</p>
+
+            <form onSubmit={agregarRegistro} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Nombre del Estudiante *</label>
+                  <input type="text" value={formData.estudiante} required placeholder="Ej: Juan García"
+                    onChange={e=>setFormData({...formData,estudiante:e.target.value})} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Docente Responsable *</label>
+                  <input type="text" value={formData.docente} required placeholder="Ej: Prof. María López"
+                    onChange={e=>setFormData({...formData,docente:e.target.value})} className={inputCls}/>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Materia *</label>
+                  <input type="text" value={formData.materia} required placeholder="Ej: Informática, Lengua"
+                    onChange={e=>setFormData({...formData,materia:e.target.value})} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Turno *</label>
+                  <select value={formData.turno} onChange={e=>setFormData({...formData,turno:e.target.value})} className={inputCls}>
+                    <option>Mañana</option><option>Tarde</option><option>Noche</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">N° de Computadora *</label>
+                  <input type="text" value={formData.numeroComputadora} required placeholder="Ej: NB-001"
+                    onChange={e=>setFormData({...formData,numeroComputadora:e.target.value})} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">N° de Serie (Opcional)</label>
+                  <input type="text" value={formData.numeroSerie} placeholder="Ej: S/N-2024-5847"
+                    onChange={e=>setFormData({...formData,numeroSerie:e.target.value})} className={inputCls}/>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Sector de Retiro *</label>
+                  <input type="text" value={formData.sector} required placeholder="Ej: Laboratorio A, Aula 205"
+                    onChange={e=>setFormData({...formData,sector:e.target.value})} className={inputCls}/>
+                </div>
+                <div>
+                  <label className="block text-white font-semibold mb-2 text-sm">Fecha de Asignación *</label>
+                  <input type="date" value={formData.fecha} required
+                    onChange={e=>setFormData({...formData,fecha:e.target.value})} className={inputCls}/>
+                </div>
+              </div>
+              <button type="submit"
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-bold py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-105">
+                <Icon d={ICONS.plus}/> Registrar Asignación
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ── TAB: Devolución ───────────────────────────────────────────────── */}
+        {activeTab === 'devolucion' && (
+          <div className="bg-white/10 backdrop-blur-md rounded-3xl shadow-2xl p-8 border border-white/20 animate-fadeIn">
+            <h2 className="text-2xl font-black text-white mb-1">Registrar Devolución de Netbook</h2>
+            <p className="text-gray-400 text-sm mb-6">Seleccioná el dispositivo que se está devolviendo</p>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-white font-semibold mb-2 text-sm">Seleccionar Netbook a Devolver *</label>
+                <select value={devolucionId} onChange={e=>setDevolucionId(e.target.value)} className={inputCls}>
+                  <option value="">-- Seleccionar --</option>
+                  {activas.map(r=>(
+                    <option key={r.id} value={r.id}>
+                      {r.numeroComputadora} — {r.estudiante} ({r.materia} · {r.turno})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {devolucionId && (() => {
+                const reg = registros.find(r=>r.id===parseInt(devolucionId));
+                return reg ? (
+                  <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-5 text-sm text-gray-200 space-y-2">
+                    <p className="text-emerald-400 font-bold mb-2">Detalles del Dispositivo</p>
+                    {[['Computadora',reg.numeroComputadora],['Estudiante',reg.estudiante],
+                      ['Docente',reg.docente],['Materia',reg.materia],
+                      ['Sector',reg.sector],['Fecha asignación',reg.fecha],
+                      reg.numeroSerie && ['N° Serie',reg.numeroSerie]].filter(Boolean).map(([k,v])=>(
+                      <p key={k}><span className="text-emerald-300 font-semibold">{k}:</span> {v}</p>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              <button onClick={registrarDevolucion} disabled={!devolucionId}
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg hover:scale-105 disabled:hover:scale-100">
+                <Icon d={ICONS.check}/> Confirmar Devolución
+              </button>
+            </div>
+
+            {activas.length === 0 && (
+              <div className="mt-5 bg-yellow-500/10 border border-yellow-400/30 rounded-2xl p-5 text-center text-yellow-300">
+                ✓ No hay netbooks pendientes de devolución
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB: Historial ────────────────────────────────────────────────── */}
+        {activeTab === 'historial' && (
+          <div className="bg-white/10 backdrop-blur-md rounded-3xl shadow-2xl p-8 border border-white/20 animate-fadeIn">
+            <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-black text-white mb-1">Historial de Movimientos</h2>
+                <p className="text-gray-400 text-sm">Todas las asignaciones y devoluciones registradas</p>
+              </div>
+              {/* Botones exportar en historial */}
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => exportarExcel(registrosFiltrados, `netbooks_filtrado_${hoy}`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-400/40 rounded-xl text-emerald-300 font-semibold text-sm transition-all">
+                  <Icon d={ICONS.download} size={16}/> Excel ({registrosFiltrados.length} filas)
+                </button>
+                <button onClick={() => exportarExcel(hoyRegistros, `netbooks_hoy_${hoy}`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-500/20 hover:bg-orange-500/40 border border-orange-400/40 rounded-xl text-orange-300 font-semibold text-sm transition-all">
+                  <Icon d={ICONS.calendar} size={16}/> Solo Hoy ({hoyRegistros.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Filtros */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+              <input type="text" placeholder="🔍 Buscar estudiante, docente..."
+                value={busqueda} onChange={e=>setBusqueda(e.target.value)}
+                className={inputCls}/>
+              <select value={filtroTurno} onChange={e=>setFiltroTurno(e.target.value)} className={inputCls}>
+                <option value="todos">Todos los turnos</option>
+                <option value="Mañana">Mañana</option>
+                <option value="Tarde">Tarde</option>
+                <option value="Noche">Noche</option>
+              </select>
+              <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} className={inputCls}>
+                <option value="todos">Todos los estados</option>
+                <option value="asignada">Asignadas</option>
+                <option value="devuelto">Devueltas</option>
+              </select>
+              <input type="date" value={filtroFecha} onChange={e=>setFiltroFecha(e.target.value)}
+                title="Filtrar por fecha de asignación o devolución"
+                className={inputCls}/>
+            </div>
+
+            {/* Tabla */}
+            {registrosFiltrados.length > 0 ? (
+              <div className="overflow-x-auto rounded-2xl border border-white/20">
+                <table className="w-full text-sm min-w-[800px]">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-blue-600/40 to-cyan-600/40 border-b border-white/20">
+                      {['N° Comp.','Estudiante','Docente','Materia','Sector','Turno','Fecha Asign.','Fecha Dev.','Estado','Eliminar'].map(h=>(
+                        <th key={h} className="px-4 py-3 text-left font-bold text-cyan-300 text-xs whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {registrosFiltrados.map((r,i)=>(
+                      <tr key={r.id} className={`border-b border-white/10 hover:bg-white/5 transition-colors ${i%2===0?'bg-white/[0.03]':''}`}>
+                        <td className="px-4 py-3 font-bold text-cyan-400 whitespace-nowrap">{r.numeroComputadora}</td>
+                        <td className="px-4 py-3 text-gray-200 whitespace-nowrap">{r.estudiante}</td>
+                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{r.docente}</td>
+                        <td className="px-4 py-3 text-gray-300">{r.materia}</td>
+                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{r.sector}</td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30 whitespace-nowrap">{r.turno}</span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{r.fecha}</td>
+                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{r.fechaDevolucion || '—'}</td>
+                        <td className="px-4 py-3">
+                          {r.estado==='asignada'
+                            ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-400/30 whitespace-nowrap">📱 Asignada</span>
+                            : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">✓ Devuelta</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button onClick={()=>eliminarRegistro(r.id)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/20 p-1.5 rounded-lg transition-all hover:scale-110">
+                            <Icon d={ICONS.trash} size={16}/>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <p>No hay registros que coincidan con los filtros aplicados</p>
+              </div>
+            )}
+
+            {/* Contador */}
+            <div className="mt-4 text-right text-gray-500 text-xs">
+              Mostrando {registrosFiltrados.length} de {registros.length} registros
+            </div>
+          </div>
+        )}
+
+        {/* Pie de página */}
+        <p className="text-center text-gray-600 text-xs mt-8">
+          Los datos se guardan automáticamente en este navegador · Control de Netbooks
+        </p>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
